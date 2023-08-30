@@ -1,52 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Star from "./Star";
-
-const tempMovieData = [
-  {
-    imdbID: "tt1375666",
-    Title: "Inception",
-    Year: "2010",
-    Poster:
-      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
-  },
-  {
-    imdbID: "tt0133093",
-    Title: "The Matrix",
-    Year: "1999",
-    Poster:
-      "https://m.media-amazon.com/images/M/MV5BNzQzOTk3OTAtNDQ0Zi00ZTVkLWI0MTEtMDllZjNkYzNjNTc4L2ltYWdlXkEyXkFqcGdeQXVyNjU0OTQ0OTY@._V1_SX300.jpg",
-  },
-  {
-    imdbID: "tt6751668",
-    Title: "Parasite",
-    Year: "2019",
-    Poster:
-      "https://m.media-amazon.com/images/M/MV5BYWZjMjk3ZTItODQ2ZC00NTY5LWE0ZDYtZTI3MjcwN2Q5NTVkXkEyXkFqcGdeQXVyODk4OTc3MTY@._V1_SX300.jpg",
-  },
-];
-
-const tempWatchedData = [
-  {
-    imdbID: "tt1375666",
-    Title: "Inception",
-    Year: "2010",
-    Poster:
-      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
-    runtime: 148,
-    imdbRating: 8.8,
-    userRating: 10,
-  },
-  {
-    imdbID: "tt0088763",
-    Title: "Back to the Future",
-    Year: "1985",
-    Poster:
-      "https://m.media-amazon.com/images/M/MV5BZmU0M2Y1OGUtZjIxNi00ZjBkLTg1MjgtOWIyNThiZWIwYjRiXkEyXkFqcGdeQXVyMTQxNzMzNDI@._V1_SX300.jpg",
-    runtime: 116,
-    imdbRating: 8.5,
-    userRating: 9,
-  },
-];
+import { useMovies } from "./useMovies";
+import { useLocalStorageState } from "./useLocalStorageState";
+import { useKeyCustomizedHook } from "./useKey";
 
 const NavBar = (props) => {
   return (
@@ -77,6 +33,34 @@ const Logo = () => {
 };
 
 const Search = (props) => {
+  const inputEl = useRef(null);
+
+  useEffect(() => {
+    inputEl.current.focus();
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        // Refresh the search bar
+        props.EnterHandle("");
+        // focus the search bar
+        inputEl.current.focus();
+      }
+    });
+
+    // Cleaning Up Function
+
+    document.removeEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        // Refresh the search bar
+        props.EnterHandle("");
+        // focus the search bar
+        inputEl.current.focus();
+      }
+    });
+  }, [props, props.query]);
+
   return (
     <input
       className="search"
@@ -84,6 +68,7 @@ const Search = (props) => {
       placeholder="Search movies..."
       value={props.queryValue}
       onChange={(e) => props.searchHandler(e.target.value)}
+      ref={inputEl}
     />
   );
 };
@@ -271,6 +256,12 @@ function MovieDetails(props) {
     })
     .includes(props.selectedId);
 
+  const countRef = useRef(0);
+
+  useEffect(() => {
+    if (userRating) countRef.current = countRef.current + 1;
+  }, [userRating]);
+
   // Destructure
   const {
     Title: title,
@@ -295,11 +286,16 @@ function MovieDetails(props) {
       imdbRating: Number(imdbRating),
       runtime: Number(runtime.split(" ")[0]),
       userRating,
+      countRatingDecision: countRef.current,
     };
 
+    console.log(newSelectedMovie);
     props.AddWatchedMovieHandler(newSelectedMovie);
     props.onCloseMovie();
   }
+
+  // Keypress Effect
+  useKeyCustomizedHook("Escape", props);
 
   // Example of how to change document title
   useEffect(() => {
@@ -391,11 +387,20 @@ function MovieDetails(props) {
 }
 
 export default function App() {
-  const [movies, setMovies] = useState([]);
   const [query, setQuery] = useState("");
-  const [isLoading, setLoading] = useState(false);
-  const [watched, setWatched] = useState([]);
-  const [error, setError] = useState("");
+
+  // States are able to initialized by function as well.
+  // const [watched, setWatched] = useState([]);
+
+  const [watched, setWatched] = useLocalStorageState([], "watched");
+
+  // Imported useEffect
+  const { movies, isLoading, error } = useMovies(
+    query,
+    apikey,
+    CloseMovieIdHandler
+  );
+
   const [selectedId, setSelectedId] = useState(0);
 
   // Handler
@@ -415,52 +420,24 @@ export default function App() {
     setWatched((crr) => [...crr, movie]);
   }
 
+  // Storage watched movie in local storage
+  useEffect(() => {
+    localStorage.setItem("watched", JSON.stringify(watched));
+  }, [watched]);
+
   // By Me
   function DeleteWatchedMovie(selectedmoviewId) {
     setWatched((crr) => crr.filter((m) => m.imdbID !== selectedmoviewId));
   }
 
-  // Data Fetching
-  useEffect(() => {
-    async function fetchMovies() {
-      try {
-        setLoading(true);
-        setError("");
-        const result = await fetch(
-          `http://www.omdbapi.com/?apikey=${apikey}&s=${query}`
-        );
-        const data = await result.json();
-        // console.log(data);
-
-        if (data.Response === "False" && data.Error === "Movie not found!") {
-          //When an error is throwed js no longer look rest of the codes.
-          //This information is important the manage our state methods.
-          // If we have a logic throw error or loading component the best the use
-          // finall block
-          setError("Movie not Found");
-          throw new Error(data.Error);
-        }
-        setMovies(data.Search);
-        setLoading(false);
-      } catch (err) {
-        // console.error(err.message);
-      } finally {
-        setLoading(false);
-      }
-
-      if (!query.length) {
-        setMovies([]);
-        setError("");
-        return;
-      }
-    }
-    fetchMovies();
-  }, [query]);
-
   return (
     <>
       <NavBar>
-        <Search queryValue={query} searchHandler={SearchHandler}></Search>
+        <Search
+          EnterHandle={setQuery}
+          queryValue={query}
+          searchHandler={SearchHandler}
+        ></Search>
         <NumResults movies={movies}></NumResults>
       </NavBar>
       <Main>
